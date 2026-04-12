@@ -1,0 +1,26 @@
+# Authors and Contributors
+
+This file contains the list of people who have contributed to the Qurox Post-Quantum Cryptography Library.
+
+## Primary Author and Copyright Holder
+
+**Philippe Lecrosnier** <lecro.philippe@icloud.com>
+- Original author and creator
+- Copyright holder (2026)
+- Primary maintainer
+- GitHub: @zxfae
+
+## Contributors
+
+To contribute to this project, please see CONTRIBUTING.md for guidelines.
+
+By contributing to this project, you agree that your contributions will be licensed under the Apache License 2.0, and you acknowledge that Philippe Lecrosnier retains copyright ownership of the overall project.
+
+## Acknowledgments
+
+This project builds upon the work of:
+- NIST Post-Quantum Cryptography Standardization project
+- The Rust cryptography ecosystem
+- Apache Software Foundation for the licensing framework
+
+For a complete list of dependencies and their authors, see Cargo.toml and the respective crate documentation.

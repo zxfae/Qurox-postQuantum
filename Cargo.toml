@@ -1,0 +1,53 @@
+[workspace]
+
+[package]
+name = "qurox-pq"
+version = "0.1.0"
+edition = "2021"
+authors = ["Philippe Lecrosnier <lecro.philippe@icloud.com>"]
+description = "Quantum-ready cryptographic SDK with hybrid classical and post-quantum algorithms"
+license = "Apache-2.0"
+readme = "README.md"
+homepage = "https://github.com/zxfae/Qurox-pq"
+rust-version = "1.70"
+repository = "https://github.com/zxfae/Qurox-pq"
+documentation = "https://docs.rs/qurox-pq"
+keywords = ["cryptography", "post-quantum", "ecdsa", "schnorr", "hybrid"]
+categories = ["cryptography"]
+
+[lib]
+name = "qurox_pq"
+path = "src/lib.rs"
+
+[dependencies]
+# Core cryptography - keep existing working versions
+k256 = { version = "0.13", features = ["ecdsa", "sha256"] }
+p256 = { version = "0.13", features = ["ecdsa", "sha256"] }
+sha2 = "0.10"
+rand = "0.8"
+thiserror = "2.0.12"
+hex = "0.4"
+zeroize = { version = "1.7", features = ["derive"] }
+
+# Post-quantum algorithms (NIST approved)
+fips204 = { version = "0.4.0", default-features = false, features = ["ml-dsa-44", "default-rng"] }
+fips205 = { version = "0.4.0", default-features = false, features = ["slh_dsa_sha2_128f"] }
+fips203 = { version = "0.2", features = ["ml-kem-768"] }
+
+# Compression (from original qurox implementation)
+zstd = { version = "0.13", optional = true }
+lz4_flex = { version = "0.11", optional = true }
+
+# Standard Rust async and serialization (replacing IC deps)
+tokio = { version = "1.0", features = ["full"], optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full"] }
+env_logger = "0.11"
+
+[features]
+default = ["compression"]
+async = ["tokio"]
+compression = ["zstd", "lz4_flex"]
