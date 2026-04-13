@@ -107,127 +107,66 @@ impl CryptographyBridge for EcdsaP256 {
     }
 }
 
-// Legacy wrapper maintaining backward compatibility
+// Byte-oriented API used by QuroxCrypto and HybridCrypto.
+// Delegates to EcdsaK256 / EcdsaP256 bridges — single implementation of the signing logic.
 pub struct EcdsaCrypto;
 
 impl EcdsaCrypto {
     pub fn generate_keypair(curve: EcdsaCurve) -> Result<KeyPair> {
         match curve {
-            EcdsaCurve::K256 => Self::generate_k256_keypair(),
-            EcdsaCurve::P256 => Self::generate_p256_keypair(),
+            EcdsaCurve::K256 => {
+                let (pk, sk) = EcdsaK256.key_generator()?;
+                Ok(KeyPair {
+                    private_key: PrivateKey { bytes: EcdsaK256.secret_key_to_bytes(&sk), algorithm: Algorithm::EcdsaK256 },
+                    public_key: PublicKey { bytes: EcdsaK256.public_key_to_bytes(&pk), algorithm: Algorithm::EcdsaK256 },
+                })
+            }
+            EcdsaCurve::P256 => {
+                let (pk, sk) = EcdsaP256.key_generator()?;
+                Ok(KeyPair {
+                    private_key: PrivateKey { bytes: EcdsaP256.secret_key_to_bytes(&sk), algorithm: Algorithm::EcdsaP256 },
+                    public_key: PublicKey { bytes: EcdsaP256.public_key_to_bytes(&pk), algorithm: Algorithm::EcdsaP256 },
+                })
+            }
         }
     }
 
     pub fn sign(private_key: &PrivateKey, message: &[u8]) -> Result<Signature> {
         match private_key.algorithm {
-            Algorithm::EcdsaK256 => Self::sign_k256(&private_key.bytes, message),
-            Algorithm::EcdsaP256 => Self::sign_p256(&private_key.bytes, message),
-            _ => Err(CryptoError::Generic(
-                "Invalid algorithm for ECDSA signing".to_string(),
-            )),
+            Algorithm::EcdsaK256 => {
+                let sk = K256SigningKey::from_slice(&private_key.bytes)
+                    .map_err(|_| CryptoError::InvalidKey)?;
+                let sig = EcdsaK256.sign(&sk, message)?;
+                Ok(Signature { bytes: EcdsaK256.signature_to_bytes(&sig), algorithm: Algorithm::EcdsaK256 })
+            }
+            Algorithm::EcdsaP256 => {
+                let sk = P256SigningKey::from_slice(&private_key.bytes)
+                    .map_err(|_| CryptoError::InvalidKey)?;
+                let sig = EcdsaP256.sign(&sk, message)?;
+                Ok(Signature { bytes: EcdsaP256.signature_to_bytes(&sig), algorithm: Algorithm::EcdsaP256 })
+            }
+            _ => Err(CryptoError::Generic("Invalid algorithm for ECDSA signing".to_string())),
         }
     }
 
     pub fn verify(public_key: &PublicKey, message: &[u8], signature: &Signature) -> Result<bool> {
         match public_key.algorithm {
-            Algorithm::EcdsaK256 => Self::verify_k256(&public_key.bytes, message, &signature.bytes),
-            Algorithm::EcdsaP256 => Self::verify_p256(&public_key.bytes, message, &signature.bytes),
-            _ => Err(CryptoError::Generic(
-                "Invalid algorithm for ECDSA verification".to_string(),
-            )),
+            Algorithm::EcdsaK256 => {
+                let pk = K256VerifyingKey::from_sec1_bytes(&public_key.bytes)
+                    .map_err(|_| CryptoError::InvalidKey)?;
+                let sig = k256::ecdsa::Signature::from_slice(&signature.bytes)
+                    .map_err(|_| CryptoError::InvalidSignature)?;
+                EcdsaK256.verify(&pk, message, &sig)
+            }
+            Algorithm::EcdsaP256 => {
+                let pk = P256VerifyingKey::from_sec1_bytes(&public_key.bytes)
+                    .map_err(|_| CryptoError::InvalidKey)?;
+                let sig = p256::ecdsa::Signature::from_slice(&signature.bytes)
+                    .map_err(|_| CryptoError::InvalidSignature)?;
+                EcdsaP256.verify(&pk, message, &sig)
+            }
+            _ => Err(CryptoError::Generic("Invalid algorithm for ECDSA verification".to_string())),
         }
-    }
-
-    fn generate_k256_keypair() -> Result<KeyPair> {
-        let signing_key = K256SigningKey::random(&mut OsRng);
-        let verifying_key = signing_key.verifying_key();
-
-        let private_key = PrivateKey {
-            bytes: signing_key.to_bytes().to_vec(),
-            algorithm: Algorithm::EcdsaK256,
-        };
-
-        let public_key = PublicKey {
-            bytes: verifying_key.to_encoded_point(false).as_bytes().to_vec(),
-            algorithm: Algorithm::EcdsaK256,
-        };
-
-        Ok(KeyPair {
-            private_key,
-            public_key,
-        })
-    }
-
-    fn generate_p256_keypair() -> Result<KeyPair> {
-        let signing_key = P256SigningKey::random(&mut OsRng);
-        let verifying_key = signing_key.verifying_key();
-
-        let private_key = PrivateKey {
-            bytes: signing_key.to_bytes().to_vec(),
-            algorithm: Algorithm::EcdsaP256,
-        };
-
-        let public_key = PublicKey {
-            bytes: verifying_key.to_encoded_point(false).as_bytes().to_vec(),
-            algorithm: Algorithm::EcdsaP256,
-        };
-
-        Ok(KeyPair {
-            private_key,
-            public_key,
-        })
-    }
-
-    fn sign_k256(private_key_bytes: &[u8], message: &[u8]) -> Result<Signature> {
-        let signing_key =
-            K256SigningKey::from_slice(private_key_bytes).map_err(|_| CryptoError::InvalidKey)?;
-
-        let signature: k256::ecdsa::Signature = signing_key.sign(message);
-
-        Ok(Signature {
-            bytes: signature.to_bytes().to_vec(),
-            algorithm: Algorithm::EcdsaK256,
-        })
-    }
-
-    fn sign_p256(private_key_bytes: &[u8], message: &[u8]) -> Result<Signature> {
-        let signing_key =
-            P256SigningKey::from_slice(private_key_bytes).map_err(|_| CryptoError::InvalidKey)?;
-
-        let signature: p256::ecdsa::Signature = signing_key.sign(message);
-
-        Ok(Signature {
-            bytes: signature.to_bytes().to_vec(),
-            algorithm: Algorithm::EcdsaP256,
-        })
-    }
-
-    fn verify_k256(
-        public_key_bytes: &[u8],
-        message: &[u8],
-        signature_bytes: &[u8],
-    ) -> Result<bool> {
-        let verifying_key = K256VerifyingKey::from_sec1_bytes(public_key_bytes)
-            .map_err(|_| CryptoError::InvalidKey)?;
-
-        let signature = k256::ecdsa::Signature::from_slice(signature_bytes)
-            .map_err(|_| CryptoError::InvalidSignature)?;
-
-        Ok(verifying_key.verify(message, &signature).is_ok())
-    }
-
-    fn verify_p256(
-        public_key_bytes: &[u8],
-        message: &[u8],
-        signature_bytes: &[u8],
-    ) -> Result<bool> {
-        let verifying_key = P256VerifyingKey::from_sec1_bytes(public_key_bytes)
-            .map_err(|_| CryptoError::InvalidKey)?;
-
-        let signature = p256::ecdsa::Signature::from_slice(signature_bytes)
-            .map_err(|_| CryptoError::InvalidSignature)?;
-
-        Ok(verifying_key.verify(message, &signature).is_ok())
     }
 }
 
