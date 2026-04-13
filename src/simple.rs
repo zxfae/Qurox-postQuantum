@@ -219,7 +219,6 @@ pub mod qurox {
             security_level: SecurityLevel::Hybrid,
             transition_mode: TransitionMode::HybridRequired,
             compression_enabled: true,
-            batch_operations: false,
             compression_config: None,
         };
         HybridSigner::with_policy(policy)
@@ -231,7 +230,6 @@ pub mod qurox {
             security_level: SecurityLevel::Hybrid,
             transition_mode: TransitionMode::HybridOptional,
             compression_enabled: true,
-            batch_operations: false,
             compression_config: None,
         };
         HybridSigner::with_policy(policy)

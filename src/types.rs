@@ -130,6 +130,5 @@ pub struct HybridPolicy {
     pub security_level: SecurityLevel,
     pub transition_mode: TransitionMode,
     pub compression_enabled: bool,
-    pub batch_operations: bool,
     pub compression_config: Option<crate::compression::CompressionConfig>,
 }

@@ -38,7 +38,6 @@ impl Default for HybridPolicy {
             security_level: SecurityLevel::Hybrid,
             transition_mode: TransitionMode::HybridOptional,
             compression_enabled: true,
-            batch_operations: false,
             compression_config: None,
         }
     }
@@ -344,7 +343,6 @@ mod tests {
             security_level: SecurityLevel::Classical,
             transition_mode: TransitionMode::ClassicalOnly,
             compression_enabled: false,
-            batch_operations: false,
             compression_config: None,
         };
 
@@ -391,7 +389,6 @@ mod tests {
             security_level: SecurityLevel::Hybrid,
             transition_mode: TransitionMode::HybridOptional,
             compression_enabled: true,
-            batch_operations: false,
             compression_config: Some(compression_config),
         };
 
