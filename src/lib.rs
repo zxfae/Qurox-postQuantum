@@ -31,6 +31,7 @@ pub use types::*;
 
 pub use simple::qurox;
 pub use simple::{HybridSigner, QuantumEncryptor, QuantumSigner};
+pub use algorithms::ecdsa::EcdsaCurve;
 
 use algorithms::*;
 use compression::*;

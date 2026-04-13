@@ -8,6 +8,7 @@
 ![FIPS 204](https://img.shields.io/badge/FIPS-204-brightgreen)
 ![FIPS 205](https://img.shields.io/badge/FIPS-205-brightgreen)
 ![status](https://img.shields.io/badge/Alpha-not%20audited-red)
+[![Benchmarks](https://img.shields.io/badge/Benchmarks-BENCHMARKS.md-informational)](BENCHMARKS.md)
 
 > Post-quantum cryptography library for Rust.
 > Implements NIST FIPS 203 / 204 / 205 alongside classical ECDSA and Schnorr,
@@ -27,6 +28,7 @@
 8. [Architecture](#8--architecture)
 9. [Security notes](#9--security-notes)
 10. [License](#10--license)
+11. [Benchmarks](BENCHMARKS.md)
 
 ---
 
