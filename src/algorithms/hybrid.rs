@@ -37,6 +37,8 @@ impl Default for HybridPolicy {
         Self {
             security_level: SecurityLevel::Hybrid,
             transition_mode: TransitionMode::HybridOptional,
+            classical_algorithm: ClassicalAlgorithm::EcdsaK256,
+            post_quantum_algorithm: PostQuantumAlgorithm::MlDsa44,
             compression_enabled: true,
             compression_config: None,
         }
@@ -172,13 +174,11 @@ impl HybridCrypto {
     }
 
     fn select_classical_algorithm(&self) -> ClassicalAlgorithm {
-        // Only secp256k1 for now; P-256 and Schnorr selection via policy to come
-        ClassicalAlgorithm::EcdsaK256
+        self.policy.classical_algorithm
     }
 
     fn select_post_quantum_algorithm(&self) -> PostQuantumAlgorithm {
-        // SLH-DSA is available but ~100x slower to sign than ML-DSA-44
-        PostQuantumAlgorithm::MlDsa44
+        self.policy.post_quantum_algorithm
     }
 
     fn create_hybrid_metadata(
@@ -342,6 +342,8 @@ mod tests {
         let policy_classical = HybridPolicy {
             security_level: SecurityLevel::Classical,
             transition_mode: TransitionMode::ClassicalOnly,
+            classical_algorithm: ClassicalAlgorithm::EcdsaK256,
+            post_quantum_algorithm: PostQuantumAlgorithm::MlDsa44,
             compression_enabled: false,
             compression_config: None,
         };
@@ -388,6 +390,8 @@ mod tests {
         let policy = HybridPolicy {
             security_level: SecurityLevel::Hybrid,
             transition_mode: TransitionMode::HybridOptional,
+            classical_algorithm: ClassicalAlgorithm::EcdsaK256,
+            post_quantum_algorithm: PostQuantumAlgorithm::MlDsa44,
             compression_enabled: true,
             compression_config: Some(compression_config),
         };
@@ -447,5 +451,186 @@ mod tests {
             .verify_hybrid(&hybrid_keypair, message, &decompressed)
             .unwrap();
         assert!(is_valid);
+    }
+
+    #[test]
+    fn test_policy_schnorr_mldsa() {
+        let policy = HybridPolicy {
+            security_level: SecurityLevel::Hybrid,
+            transition_mode: TransitionMode::HybridRequired,
+            classical_algorithm: ClassicalAlgorithm::Schnorr,
+            post_quantum_algorithm: PostQuantumAlgorithm::MlDsa44,
+            compression_enabled: false,
+            compression_config: None,
+        };
+        let hybrid_crypto = HybridCrypto::new(policy);
+        let keypair = hybrid_crypto.generate_hybrid_keypair().unwrap();
+        let message = b"schnorr + mldsa";
+
+        assert_eq!(keypair.classical_keypair.private_key.algorithm, Algorithm::Schnorr);
+        assert_eq!(keypair.post_quantum_keypair.private_key.algorithm, Algorithm::MlDsa44);
+
+        let sig = hybrid_crypto.sign_hybrid(&keypair, message).unwrap();
+        assert!(hybrid_crypto.verify_hybrid(&keypair, message, &sig).unwrap());
+    }
+
+    #[test]
+    fn test_policy_p256_mldsa() {
+        let policy = HybridPolicy {
+            security_level: SecurityLevel::Hybrid,
+            transition_mode: TransitionMode::HybridRequired,
+            classical_algorithm: ClassicalAlgorithm::EcdsaP256,
+            post_quantum_algorithm: PostQuantumAlgorithm::MlDsa44,
+            compression_enabled: false,
+            compression_config: None,
+        };
+        let hybrid_crypto = HybridCrypto::new(policy);
+        let keypair = hybrid_crypto.generate_hybrid_keypair().unwrap();
+        let message = b"p256 + mldsa";
+
+        assert_eq!(keypair.classical_keypair.private_key.algorithm, Algorithm::EcdsaP256);
+        assert_eq!(keypair.post_quantum_keypair.private_key.algorithm, Algorithm::MlDsa44);
+
+        let sig = hybrid_crypto.sign_hybrid(&keypair, message).unwrap();
+        assert!(hybrid_crypto.verify_hybrid(&keypair, message, &sig).unwrap());
+    }
+
+    #[test]
+    fn test_policy_k256_slhdsa() {
+        let policy = HybridPolicy {
+            security_level: SecurityLevel::Hybrid,
+            transition_mode: TransitionMode::HybridRequired,
+            classical_algorithm: ClassicalAlgorithm::EcdsaK256,
+            post_quantum_algorithm: PostQuantumAlgorithm::SlhDsaSha2128f,
+            compression_enabled: false,
+            compression_config: None,
+        };
+        let hybrid_crypto = HybridCrypto::new(policy);
+        let keypair = hybrid_crypto.generate_hybrid_keypair().unwrap();
+        let message = b"k256 + slh-dsa";
+
+        assert_eq!(keypair.classical_keypair.private_key.algorithm, Algorithm::EcdsaK256);
+        assert_eq!(keypair.post_quantum_keypair.private_key.algorithm, Algorithm::SlhDsaSha2128f);
+
+        let sig = hybrid_crypto.sign_hybrid(&keypair, message).unwrap();
+        assert!(hybrid_crypto.verify_hybrid(&keypair, message, &sig).unwrap());
+    }
+
+    /// Simulates a quantum attack: the adversary has compromised the classical key
+    /// (via Shor's algorithm) but not the post-quantum key.
+    ///
+    /// With HybridRequired, verification must fail because the ML-DSA signature
+    /// does not match Alice's PQ key.
+    /// With ClassicalOnly, verification passes — demonstrating why this mode
+    /// is insufficient against a quantum-capable adversary.
+    #[test]
+    fn test_quantum_attacker_compromises_classical_key() {
+        let message = b"transfer 1000 ETH to attacker";
+
+        // Alice generates her hybrid keypair
+        let alice_policy = HybridPolicy {
+            security_level: SecurityLevel::Hybrid,
+            transition_mode: TransitionMode::HybridRequired,
+            classical_algorithm: ClassicalAlgorithm::EcdsaK256,
+            post_quantum_algorithm: PostQuantumAlgorithm::MlDsa44,
+            compression_enabled: false,
+            compression_config: None,
+        };
+        let alice_crypto = HybridCrypto::new(alice_policy);
+        let alice_keypair = alice_crypto.generate_hybrid_keypair().unwrap();
+
+        // The attacker has Alice's classical key (via Shor's) but their own PQ key
+        let attacker_crypto = HybridCrypto::new(HybridPolicy {
+            security_level: SecurityLevel::Hybrid,
+            transition_mode: TransitionMode::HybridRequired,
+            classical_algorithm: ClassicalAlgorithm::EcdsaK256,
+            post_quantum_algorithm: PostQuantumAlgorithm::MlDsa44,
+            compression_enabled: false,
+            compression_config: None,
+        });
+
+        // Attacker forges a keypair: Alice's classical key + attacker's own PQ key
+        let forged_keypair = HybridKeyPair {
+            classical_keypair: alice_keypair.classical_keypair.clone(),
+            post_quantum_keypair: attacker_crypto.generate_hybrid_keypair().unwrap().post_quantum_keypair,
+            security_level: SecurityLevel::Hybrid,
+        };
+
+        let forged_sig = attacker_crypto.sign_hybrid(&forged_keypair, message).unwrap();
+
+        // HybridRequired: Alice verifies with her real keys — FAILS
+        // The attacker's ML-DSA signature does not match Alice's PQ public key
+        let is_valid_hybrid = alice_crypto
+            .verify_hybrid(&alice_keypair, message, &forged_sig)
+            .unwrap();
+        assert!(!is_valid_hybrid, "HybridRequired must reject a forged signature");
+
+        // ClassicalOnly: same check — PASSES (vulnerable mode)
+        // This demonstrates why ClassicalOnly is insufficient
+        let classical_only_crypto = HybridCrypto::new(HybridPolicy {
+            security_level: SecurityLevel::Classical,
+            transition_mode: TransitionMode::ClassicalOnly,
+            classical_algorithm: ClassicalAlgorithm::EcdsaK256,
+            post_quantum_algorithm: PostQuantumAlgorithm::MlDsa44,
+            compression_enabled: false,
+            compression_config: None,
+        });
+        let is_valid_classical = classical_only_crypto
+            .verify_hybrid(&alice_keypair, message, &forged_sig)
+            .unwrap();
+        assert!(is_valid_classical, "ClassicalOnly accepts the forged signature — vulnerable mode demonstrated");
+    }
+
+    /// Same quantum attack scenario as above, but with compression enabled.
+    /// Ensures that compress/decompress roundtrip does not weaken hybrid verification.
+    #[test]
+    fn test_quantum_attacker_compromises_classical_key_compressed() {
+        let message = b"transfer 1000 ETH to attacker";
+
+        let policy = HybridPolicy {
+            security_level: SecurityLevel::Hybrid,
+            transition_mode: TransitionMode::HybridRequired,
+            classical_algorithm: ClassicalAlgorithm::EcdsaK256,
+            post_quantum_algorithm: PostQuantumAlgorithm::MlDsa44,
+            compression_enabled: true,
+            compression_config: None,
+        };
+        let alice_crypto = HybridCrypto::new(policy);
+        let alice_keypair = alice_crypto.generate_hybrid_keypair().unwrap();
+
+        // Attacker forges a keypair: Alice's classical key + attacker's own PQ key
+        let attacker_crypto = HybridCrypto::new(HybridPolicy {
+            security_level: SecurityLevel::Hybrid,
+            transition_mode: TransitionMode::HybridRequired,
+            classical_algorithm: ClassicalAlgorithm::EcdsaK256,
+            post_quantum_algorithm: PostQuantumAlgorithm::MlDsa44,
+            compression_enabled: true,
+            compression_config: None,
+        });
+        let forged_keypair = HybridKeyPair {
+            classical_keypair: alice_keypair.classical_keypair.clone(),
+            post_quantum_keypair: attacker_crypto.generate_hybrid_keypair().unwrap().post_quantum_keypair,
+            security_level: SecurityLevel::Hybrid,
+        };
+
+        // Attacker signs and compresses
+        let forged_compressed = attacker_crypto
+            .sign_hybrid_compressed(&forged_keypair, message)
+            .unwrap();
+
+        // Alice verifies the compressed forged signature — must fail
+        let is_valid = alice_crypto
+            .verify_hybrid_compressed(&alice_keypair, message, &forged_compressed)
+            .unwrap();
+        assert!(!is_valid, "HybridRequired must reject a compressed forged signature");
+
+        // Sanity check: Alice's own compressed signature must still verify
+        let alice_compressed = alice_crypto
+            .sign_hybrid_compressed(&alice_keypair, message)
+            .unwrap();
+        let alice_valid = alice_crypto
+            .verify_hybrid_compressed(&alice_keypair, message, &alice_compressed)
+            .unwrap();
+        assert!(alice_valid, "Alice's own compressed signature must verify");
     }
 }

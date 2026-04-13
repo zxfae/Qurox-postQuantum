@@ -20,7 +20,7 @@
 use crate::algorithms::{HybridCrypto, MlDsa44, MlKem768};
 use crate::bridge::{CryptographyBridge, KeyEncapsulationBridge};
 use crate::errors::{CryptoError, Result};
-use crate::types::{HybridKeyPair, HybridPolicy, SecurityLevel, TransitionMode};
+use crate::types::{ClassicalAlgorithm, HybridKeyPair, HybridPolicy, PostQuantumAlgorithm, SecurityLevel, TransitionMode};
 
 /// Quantum-safe signer using ML-DSA-44
 pub struct QuantumSigner {
@@ -218,6 +218,8 @@ pub mod qurox {
         let policy = HybridPolicy {
             security_level: SecurityLevel::Hybrid,
             transition_mode: TransitionMode::HybridRequired,
+            classical_algorithm: ClassicalAlgorithm::EcdsaK256,
+            post_quantum_algorithm: PostQuantumAlgorithm::MlDsa44,
             compression_enabled: true,
             compression_config: None,
         };
@@ -229,6 +231,8 @@ pub mod qurox {
         let policy = HybridPolicy {
             security_level: SecurityLevel::Hybrid,
             transition_mode: TransitionMode::HybridOptional,
+            classical_algorithm: ClassicalAlgorithm::EcdsaK256,
+            post_quantum_algorithm: PostQuantumAlgorithm::MlDsa44,
             compression_enabled: true,
             compression_config: None,
         };

@@ -129,6 +129,8 @@ pub struct HybridMetadata {
 pub struct HybridPolicy {
     pub security_level: SecurityLevel,
     pub transition_mode: TransitionMode,
+    pub classical_algorithm: ClassicalAlgorithm,
+    pub post_quantum_algorithm: PostQuantumAlgorithm,
     pub compression_enabled: bool,
     pub compression_config: Option<crate::compression::CompressionConfig>,
 }
