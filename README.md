@@ -1,6 +1,6 @@
 # qurox-pq
 
-![version](https://img.shields.io/badge/v0.1.0-blue)
+![version](https://img.shields.io/badge/v0.2.0-blue)
 [![Crates.io](https://img.shields.io/crates/v/qurox-pq.svg)](https://crates.io/crates/qurox-pq)
 [![Docs](https://docs.rs/qurox-pq/badge.svg)](https://docs.rs/qurox-pq)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -91,7 +91,7 @@ The built-in zstd / lz4 compression reduces this by **60–80%** in practice.
 
 ```toml
 [dependencies]
-qurox-pq = "0.1.0"
+qurox-pq = "0.2.0"
 ```
 
 ```rust
