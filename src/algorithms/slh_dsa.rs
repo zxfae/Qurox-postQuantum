@@ -14,6 +14,7 @@
 
 //! SLH-DSA (Stateless Hash-Based Digital Signature Algorithm) implementation.
 
+use crate::bridge::CryptographyBridge;
 use crate::errors::{CryptoError, Result};
 use crate::types::{Algorithm, KeyPair, PrivateKey, PublicKey, Signature};
 
@@ -23,76 +24,81 @@ use fips205::{
 };
 use rand::rngs::OsRng;
 
+#[derive(Debug, Clone)]
+pub struct SlhDsaSha2128f;
+
+impl CryptographyBridge for SlhDsaSha2128f {
+    type PublicKey = slh_dsa_sha2_128f::PublicKey;
+    type SecretKey = slh_dsa_sha2_128f::PrivateKey;
+    type SignedMessage = Vec<u8>;
+
+    fn key_generator(&self) -> Result<(Self::PublicKey, Self::SecretKey)> {
+        slh_dsa_sha2_128f::try_keygen_with_rng(&mut OsRng)
+            .map_err(|_| CryptoError::RandomGenerationFailed)
+    }
+
+    fn sign(&self, secret_key: &Self::SecretKey, message: &[u8]) -> Result<Self::SignedMessage> {
+        let sig = secret_key
+            .try_sign_with_rng(&mut OsRng, message, &[], false)
+            .map_err(|_| CryptoError::Generic("SLH-DSA signing failed".to_string()))?;
+        Ok(sig.to_vec())
+    }
+
+    fn verify(&self, public_key: &Self::PublicKey, message: &[u8], signature: &Self::SignedMessage) -> Result<bool> {
+        let sig_array: [u8; SIG_LEN] = signature
+            .as_slice()
+            .try_into()
+            .map_err(|_| CryptoError::InvalidSignature)?;
+        Ok(public_key.verify(message, &sig_array, &[]))
+    }
+
+    fn public_key_to_bytes(&self, public_key: &Self::PublicKey) -> Vec<u8> {
+        public_key.clone().into_bytes().to_vec()
+    }
+
+    fn secret_key_to_bytes(&self, secret_key: &Self::SecretKey) -> Vec<u8> {
+        secret_key.clone().into_bytes().to_vec()
+    }
+
+    fn signature_to_bytes(&self, signature: &Self::SignedMessage) -> Vec<u8> {
+        signature.clone()
+    }
+}
+
+// Byte-oriented API used by QuroxCrypto and HybridCrypto.
+// Delegates to SlhDsaSha2128f bridge — single implementation of the signing logic.
 pub struct SlhDsaCrypto;
 
 impl SlhDsaCrypto {
     pub fn generate_keypair() -> Result<KeyPair> {
-        let (public_key_bytes, secret_key_bytes) =
-            slh_dsa_sha2_128f::try_keygen_with_rng(&mut OsRng)
-                .map_err(|_| CryptoError::RandomGenerationFailed)?;
-
-        let private_key = PrivateKey {
-            bytes: secret_key_bytes.into_bytes().to_vec(),
-            algorithm: Algorithm::SlhDsaSha2128f,
-        };
-
-        let public_key = PublicKey {
-            bytes: public_key_bytes.into_bytes().to_vec(),
-            algorithm: Algorithm::SlhDsaSha2128f,
-        };
-
+        let (pk, sk) = SlhDsaSha2128f.key_generator()?;
         Ok(KeyPair {
-            private_key,
-            public_key,
+            private_key: PrivateKey { bytes: SlhDsaSha2128f.secret_key_to_bytes(&sk), algorithm: Algorithm::SlhDsaSha2128f },
+            public_key: PublicKey { bytes: SlhDsaSha2128f.public_key_to_bytes(&pk), algorithm: Algorithm::SlhDsaSha2128f },
         })
     }
 
     pub fn sign(private_key: &PrivateKey, message: &[u8]) -> Result<Signature> {
         if private_key.algorithm != Algorithm::SlhDsaSha2128f {
-            return Err(CryptoError::Generic(
-                "Invalid algorithm for SLH-DSA signing".to_string(),
-            ));
+            return Err(CryptoError::Generic("Invalid algorithm for SLH-DSA signing".to_string()));
         }
-
-        let secret_key_array: [u8; SK_LEN] = private_key
-            .bytes
-            .as_slice()
-            .try_into()
+        let sk_array: [u8; SK_LEN] = private_key.bytes.as_slice()
+            .try_into().map_err(|_| CryptoError::InvalidKey)?;
+        let sk = slh_dsa_sha2_128f::PrivateKey::try_from_bytes(&sk_array)
             .map_err(|_| CryptoError::InvalidKey)?;
-        let secret_key = slh_dsa_sha2_128f::PrivateKey::try_from_bytes(&secret_key_array)
-            .map_err(|_| CryptoError::InvalidKey)?;
-
-        let signature_bytes = secret_key
-            .try_sign_with_rng(&mut OsRng, message, &[], false)
-            .map_err(|_| CryptoError::Generic("SLH-DSA signing failed".to_string()))?;
-
-        Ok(Signature {
-            bytes: signature_bytes.to_vec(),
-            algorithm: Algorithm::SlhDsaSha2128f,
-        })
+        let sig = SlhDsaSha2128f.sign(&sk, message)?;
+        Ok(Signature { bytes: SlhDsaSha2128f.signature_to_bytes(&sig), algorithm: Algorithm::SlhDsaSha2128f })
     }
 
     pub fn verify(public_key: &PublicKey, message: &[u8], signature: &Signature) -> Result<bool> {
         if public_key.algorithm != Algorithm::SlhDsaSha2128f {
-            return Err(CryptoError::Generic(
-                "Invalid algorithm for SLH-DSA verification".to_string(),
-            ));
+            return Err(CryptoError::Generic("Invalid algorithm for SLH-DSA verification".to_string()));
         }
-
-        let public_key_array: [u8; PK_LEN] = public_key
-            .bytes
-            .as_slice()
-            .try_into()
+        let pk_array: [u8; PK_LEN] = public_key.bytes.as_slice()
+            .try_into().map_err(|_| CryptoError::InvalidKey)?;
+        let pk = slh_dsa_sha2_128f::PublicKey::try_from_bytes(&pk_array)
             .map_err(|_| CryptoError::InvalidKey)?;
-        let pk = slh_dsa_sha2_128f::PublicKey::try_from_bytes(&public_key_array)
-            .map_err(|_| CryptoError::InvalidKey)?;
-
-        let signature_array: [u8; SIG_LEN] = signature
-            .bytes
-            .as_slice()
-            .try_into()
-            .map_err(|_| CryptoError::InvalidSignature)?;
-        Ok(pk.verify(message, &signature_array, &[]))
+        SlhDsaSha2128f.verify(&pk, message, &signature.bytes)
     }
 }
 

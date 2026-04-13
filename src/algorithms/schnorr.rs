@@ -14,6 +14,7 @@
 
 //! Schnorr signature implementation for secp256k1 curve.
 
+use crate::bridge::CryptographyBridge;
 use crate::errors::{CryptoError, Result};
 use crate::types::{Algorithm, KeyPair, PrivateKey, PublicKey, Signature};
 
@@ -23,61 +24,71 @@ use k256::{
 };
 use rand::rngs::OsRng;
 
+#[derive(Debug, Clone)]
+pub struct Schnorr;
+
+impl CryptographyBridge for Schnorr {
+    type PublicKey = VerifyingKey;
+    type SecretKey = SigningKey;
+    type SignedMessage = k256::schnorr::Signature;
+
+    fn key_generator(&self) -> Result<(Self::PublicKey, Self::SecretKey)> {
+        let sk = SigningKey::random(&mut OsRng);
+        let pk = *sk.verifying_key();
+        Ok((pk, sk))
+    }
+
+    fn sign(&self, secret_key: &Self::SecretKey, message: &[u8]) -> Result<Self::SignedMessage> {
+        Ok(secret_key.sign(message))
+    }
+
+    fn verify(&self, public_key: &Self::PublicKey, message: &[u8], signature: &Self::SignedMessage) -> Result<bool> {
+        Ok(public_key.verify(message, signature).is_ok())
+    }
+
+    fn public_key_to_bytes(&self, public_key: &Self::PublicKey) -> Vec<u8> {
+        public_key.to_bytes().to_vec()
+    }
+
+    fn secret_key_to_bytes(&self, secret_key: &Self::SecretKey) -> Vec<u8> {
+        secret_key.to_bytes().to_vec()
+    }
+
+    fn signature_to_bytes(&self, signature: &Self::SignedMessage) -> Vec<u8> {
+        signature.to_bytes().to_vec()
+    }
+}
+
+// Byte-oriented API used by QuroxCrypto and HybridCrypto.
+// Delegates to Schnorr bridge — single implementation of the signing logic.
 pub struct SchnorrCrypto;
 
 impl SchnorrCrypto {
     pub fn generate_keypair() -> Result<KeyPair> {
-        let signing_key = SigningKey::random(&mut OsRng);
-        let verifying_key = signing_key.verifying_key();
-
-        let private_key = PrivateKey {
-            bytes: signing_key.to_bytes().to_vec(),
-            algorithm: Algorithm::Schnorr,
-        };
-
-        let public_key = PublicKey {
-            bytes: verifying_key.to_bytes().to_vec(),
-            algorithm: Algorithm::Schnorr,
-        };
-
+        let (pk, sk) = Schnorr.key_generator()?;
         Ok(KeyPair {
-            private_key,
-            public_key,
+            private_key: PrivateKey { bytes: Schnorr.secret_key_to_bytes(&sk), algorithm: Algorithm::Schnorr },
+            public_key: PublicKey { bytes: Schnorr.public_key_to_bytes(&pk), algorithm: Algorithm::Schnorr },
         })
     }
 
     pub fn sign(private_key: &PrivateKey, message: &[u8]) -> Result<Signature> {
         if private_key.algorithm != Algorithm::Schnorr {
-            return Err(CryptoError::Generic(
-                "Invalid algorithm for Schnorr signing".to_string(),
-            ));
+            return Err(CryptoError::Generic("Invalid algorithm for Schnorr signing".to_string()));
         }
-
-        let signing_key =
-            SigningKey::from_bytes(&private_key.bytes).map_err(|_| CryptoError::InvalidKey)?;
-
-        let signature: k256::schnorr::Signature = signing_key.sign(message);
-
-        Ok(Signature {
-            bytes: signature.to_bytes().to_vec(),
-            algorithm: Algorithm::Schnorr,
-        })
+        let sk = SigningKey::from_bytes(&private_key.bytes).map_err(|_| CryptoError::InvalidKey)?;
+        let sig = Schnorr.sign(&sk, message)?;
+        Ok(Signature { bytes: Schnorr.signature_to_bytes(&sig), algorithm: Algorithm::Schnorr })
     }
 
     pub fn verify(public_key: &PublicKey, message: &[u8], signature: &Signature) -> Result<bool> {
         if public_key.algorithm != Algorithm::Schnorr {
-            return Err(CryptoError::Generic(
-                "Invalid algorithm for Schnorr verification".to_string(),
-            ));
+            return Err(CryptoError::Generic("Invalid algorithm for Schnorr verification".to_string()));
         }
-
-        let verifying_key =
-            VerifyingKey::from_bytes(&public_key.bytes).map_err(|_| CryptoError::InvalidKey)?;
-
-        let signature = k256::schnorr::Signature::try_from(&signature.bytes[..])
+        let pk = VerifyingKey::from_bytes(&public_key.bytes).map_err(|_| CryptoError::InvalidKey)?;
+        let sig = k256::schnorr::Signature::try_from(&signature.bytes[..])
             .map_err(|_| CryptoError::InvalidSignature)?;
-
-        Ok(verifying_key.verify(message, &signature).is_ok())
+        Schnorr.verify(&pk, message, &sig)
     }
 }
 

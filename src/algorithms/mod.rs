@@ -21,9 +21,9 @@ pub mod mlkem;
 pub mod schnorr;
 pub mod slh_dsa;
 
-pub use ecdsa::*;
+pub use ecdsa::{EcdsaCrypto, EcdsaCurve, EcdsaK256, EcdsaP256};
 pub use hybrid::*;
-pub use mldsa::*;
-pub use mlkem::*;
-pub use schnorr::*;
-pub use slh_dsa::*;
+pub use mldsa::{MlDsa44, MlDsaCrypto};
+pub use mlkem::{EncryptionResult, MlKem768, MlKemCrypto};
+pub use schnorr::{Schnorr, SchnorrCrypto};
+pub use slh_dsa::{SlhDsaCrypto, SlhDsaSha2128f};
