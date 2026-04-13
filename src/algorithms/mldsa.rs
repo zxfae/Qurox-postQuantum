@@ -75,27 +75,23 @@ impl CryptographyBridge for MlDsa44 {
     }
 }
 
-// Low-level API that works with raw byte slices (used by QuroxCrypto)
+// Byte-oriented API used by QuroxCrypto and HybridCrypto.
+// Delegates to MlDsa44 bridge — single implementation of the FIPS logic.
 pub struct MlDsaCrypto;
 
 impl MlDsaCrypto {
     pub fn generate_keypair() -> Result<KeyPair> {
-        let (public_key_bytes, secret_key_bytes) = ml_dsa_44::try_keygen_with_rng(&mut OsRng)
-            .map_err(|_| CryptoError::RandomGenerationFailed)?;
-
-        let private_key = PrivateKey {
-            bytes: secret_key_bytes.into_bytes().to_vec(),
-            algorithm: Algorithm::MlDsa44,
-        };
-
-        let public_key = PublicKey {
-            bytes: public_key_bytes.into_bytes().to_vec(),
-            algorithm: Algorithm::MlDsa44,
-        };
-
+        let bridge = MlDsa44;
+        let (pk, sk) = bridge.key_generator()?;
         Ok(KeyPair {
-            private_key,
-            public_key,
+            private_key: PrivateKey {
+                bytes: bridge.secret_key_to_bytes(&sk),
+                algorithm: Algorithm::MlDsa44,
+            },
+            public_key: PublicKey {
+                bytes: bridge.public_key_to_bytes(&pk),
+                algorithm: Algorithm::MlDsa44,
+            },
         })
     }
 
@@ -105,21 +101,16 @@ impl MlDsaCrypto {
                 "Invalid algorithm for ML-DSA signing".to_string(),
             ));
         }
-
-        let secret_key_array: [u8; SK_LEN] = private_key
+        let sk_array: [u8; SK_LEN] = private_key
             .bytes
             .as_slice()
             .try_into()
             .map_err(|_| CryptoError::InvalidKey)?;
-        let secret_key = ml_dsa_44::PrivateKey::try_from_bytes(secret_key_array)
+        let sk = ml_dsa_44::PrivateKey::try_from_bytes(sk_array)
             .map_err(|_| CryptoError::InvalidKey)?;
-
-        let signature_bytes = secret_key
-            .try_sign_with_rng(&mut OsRng, message, &[])
-            .map_err(|_| CryptoError::Generic("ML-DSA signing failed".to_string()))?;
-
+        let sig = MlDsa44.sign(&sk, message)?;
         Ok(Signature {
-            bytes: signature_bytes.to_vec(),
+            bytes: MlDsa44.signature_to_bytes(&sig),
             algorithm: Algorithm::MlDsa44,
         })
     }
@@ -130,21 +121,14 @@ impl MlDsaCrypto {
                 "Invalid algorithm for ML-DSA verification".to_string(),
             ));
         }
-
-        let public_key_array: [u8; PK_LEN] = public_key
+        let pk_array: [u8; PK_LEN] = public_key
             .bytes
             .as_slice()
             .try_into()
             .map_err(|_| CryptoError::InvalidKey)?;
-        let pk = ml_dsa_44::PublicKey::try_from_bytes(public_key_array)
+        let pk = ml_dsa_44::PublicKey::try_from_bytes(pk_array)
             .map_err(|_| CryptoError::InvalidKey)?;
-
-        let signature_array: [u8; SIG_LEN] = signature
-            .bytes
-            .as_slice()
-            .try_into()
-            .map_err(|_| CryptoError::InvalidSignature)?;
-        Ok(pk.verify(message, &signature_array, &[]))
+        MlDsa44.verify(&pk, message, &signature.bytes)
     }
 }
 
