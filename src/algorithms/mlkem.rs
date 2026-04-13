@@ -68,7 +68,8 @@ impl KeyEncapsulationBridge for MlKem768 {
     }
 }
 
-// Legacy wrapper maintaining backward compatibility
+// Byte-oriented API used by QuroxCrypto.
+// Delegates to MlKem768 bridge — single implementation of the KEM logic.
 pub struct MlKemCrypto;
 
 #[derive(Debug, Clone)]
@@ -79,26 +80,16 @@ pub struct EncryptionResult {
 
 impl MlKemCrypto {
     pub fn generate_keypair() -> Result<KeyPair> {
-        // Original qurox uses (ek, dk) order like this
-        let (ek, dk) = ml_kem_768::KG::try_keygen_with_rng(&mut OsRng)
-            .map_err(|_| CryptoError::RandomGenerationFailed)?;
-
-        // Following original qurox implementation:
-        // - ek (EncapsKey, EK_LEN=1184) is public key
-        // - dk (DecapsKey, DK_LEN=2400) is private key
-        let private_key = PrivateKey {
-            bytes: dk.into_bytes().to_vec(), // DK_LEN = 2400
-            algorithm: Algorithm::MlKem768,
-        };
-
-        let public_key = PublicKey {
-            bytes: ek.into_bytes().to_vec(), // EK_LEN = 1184
-            algorithm: Algorithm::MlKem768,
-        };
-
+        let (ek, dk) = MlKem768.kem_keygen()?;
         Ok(KeyPair {
-            private_key,
-            public_key,
+            private_key: PrivateKey {
+                bytes: dk.into_bytes().to_vec(),
+                algorithm: Algorithm::MlKem768,
+            },
+            public_key: PublicKey {
+                bytes: MlKem768.kem_public_key_to_bytes(&ek),
+                algorithm: Algorithm::MlKem768,
+            },
         })
     }
 
@@ -108,22 +99,14 @@ impl MlKemCrypto {
                 "Invalid algorithm for ML-KEM encapsulation".to_string(),
             ));
         }
-
-        let encapsulation_key_array: [u8; EK_LEN] = public_key
-            .bytes
-            .as_slice()
-            .try_into()
+        let ek_array: [u8; EK_LEN] = public_key.bytes.as_slice()
+            .try_into().map_err(|_| CryptoError::InvalidKey)?;
+        let ek = ml_kem_768::EncapsKey::try_from_bytes(ek_array)
             .map_err(|_| CryptoError::InvalidKey)?;
-        let encapsulation_key = ml_kem_768::EncapsKey::try_from_bytes(encapsulation_key_array)
-            .map_err(|_| CryptoError::InvalidKey)?;
-
-        let (shared_secret, ciphertext) = encapsulation_key
-            .try_encaps_with_rng(&mut OsRng)
-            .map_err(|_| CryptoError::Generic("ML-KEM encapsulation failed".to_string()))?;
-
+        let (ct, shared_secret) = MlKem768.encapsulate(&ek)?;
         Ok(EncryptionResult {
-            ciphertext: ciphertext.into_bytes().to_vec(),
-            shared_secret: shared_secret.into_bytes().to_vec(),
+            ciphertext: ct.into_bytes().to_vec(),
+            shared_secret,
         })
     }
 
@@ -133,26 +116,15 @@ impl MlKemCrypto {
                 "Invalid algorithm for ML-KEM decapsulation".to_string(),
             ));
         }
-
-        let decapsulation_key_array: [u8; DK_LEN] = private_key
-            .bytes
-            .as_slice()
-            .try_into()
+        let dk_array: [u8; DK_LEN] = private_key.bytes.as_slice()
+            .try_into().map_err(|_| CryptoError::InvalidKey)?;
+        let dk = ml_kem_768::DecapsKey::try_from_bytes(dk_array)
             .map_err(|_| CryptoError::InvalidKey)?;
-        let decapsulation_key = ml_kem_768::DecapsKey::try_from_bytes(decapsulation_key_array)
-            .map_err(|_| CryptoError::InvalidKey)?;
-
-        let ciphertext_array: [u8; CT_LEN] = ciphertext
-            .try_into()
-            .map_err(|_| CryptoError::Generic("Invalid ciphertext size".to_string()))?;
-        let ct = ml_kem_768::CipherText::try_from_bytes(ciphertext_array)
+        let ct_array: [u8; CT_LEN] = ciphertext
+            .try_into().map_err(|_| CryptoError::Generic("Invalid ciphertext size".to_string()))?;
+        let ct = ml_kem_768::CipherText::try_from_bytes(ct_array)
             .map_err(|_| CryptoError::Generic("Invalid ciphertext".to_string()))?;
-
-        let shared_secret = decapsulation_key
-            .try_decaps(&ct)
-            .map_err(|_| CryptoError::Generic("ML-KEM decapsulation failed".to_string()))?;
-
-        Ok(shared_secret.into_bytes().to_vec())
+        MlKem768.decapsulate(&dk, &ct)
     }
 }
 
