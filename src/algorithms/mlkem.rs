@@ -18,6 +18,8 @@ use crate::bridge::KeyEncapsulationBridge;
 use crate::errors::{CryptoError, Result};
 use crate::types::{Algorithm, KeyPair, PrivateKey, PublicKey};
 
+use zeroize::Zeroize;
+
 use fips203::{
     ml_kem_768::{self, CT_LEN, DK_LEN, EK_LEN},
     traits::{Decaps, Encaps, KeyGen, SerDes},
@@ -76,6 +78,18 @@ pub struct MlKemCrypto;
 pub struct EncryptionResult {
     pub ciphertext: Vec<u8>,
     pub shared_secret: Vec<u8>,
+}
+
+impl Drop for EncryptionResult {
+    fn drop(&mut self) {
+        self.shared_secret.zeroize();
+    }
+}
+
+impl Zeroize for EncryptionResult {
+    fn zeroize(&mut self) {
+        self.shared_secret.zeroize();
+    }
 }
 
 impl MlKemCrypto {

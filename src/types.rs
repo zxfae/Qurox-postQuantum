@@ -56,13 +56,18 @@ pub enum TransitionMode {
     QuantumOnly,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// KeyPair does not implement Serialize/Deserialize: it contains a PrivateKey.
+#[derive(Debug, Clone)]
 pub struct KeyPair {
     pub private_key: PrivateKey,
     pub public_key: PublicKey,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+// PrivateKey intentionally does NOT implement Serialize/Deserialize.
+// Serializing private key material defeats zeroize-on-drop and creates
+// persistent copies on disk or in logs. Export keys only through
+// dedicated, audited paths.
+#[derive(Clone)]
 pub struct PrivateKey {
     pub bytes: Vec<u8>,
     pub algorithm: Algorithm,
@@ -101,7 +106,8 @@ impl std::fmt::Debug for PrivateKey {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// HybridKeyPair does not implement Serialize/Deserialize: contains private keys.
+#[derive(Debug, Clone)]
 pub struct HybridKeyPair {
     pub classical_keypair: KeyPair,
     pub post_quantum_keypair: KeyPair,

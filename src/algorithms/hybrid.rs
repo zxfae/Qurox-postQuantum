@@ -166,10 +166,11 @@ impl HybridCrypto {
             }
         };
 
-        match self.policy.security_level {
-            SecurityLevel::Classical => Ok(classical_valid),
-            SecurityLevel::QuantumOnly => Ok(post_quantum_valid),
-            SecurityLevel::Hybrid => Ok(classical_valid && post_quantum_valid),
+        match self.policy.transition_mode {
+            TransitionMode::ClassicalOnly => Ok(classical_valid),
+            TransitionMode::QuantumOnly => Ok(post_quantum_valid),
+            TransitionMode::HybridOptional => Ok(classical_valid || post_quantum_valid),
+            TransitionMode::HybridRequired => Ok(classical_valid && post_quantum_valid),
         }
     }
 

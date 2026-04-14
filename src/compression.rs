@@ -49,6 +49,9 @@ pub struct CompressedData {
     pub original_size: usize,
     pub compressed_size: usize,
     pub compression_ratio: f64,
+    /// Whether the bytes were actually compressed. When false, `compressed_bytes`
+    /// is a verbatim copy of the input (threshold not met or compression disabled).
+    pub is_compressed: bool,
     pub algorithm: CompressionAlgorithm,
     pub level: u8,
 }
@@ -121,6 +124,7 @@ impl CompressionEngine {
                 original_size: data.len(),
                 compressed_size: data.len(),
                 compression_ratio: 0.0,
+                is_compressed: false,
                 algorithm: self.config.algorithm,
                 level: 0,
             });
@@ -133,7 +137,7 @@ impl CompressionEngine {
     }
 
     pub fn decompress_data(&self, compressed: &CompressedData) -> Result<Vec<u8>> {
-        if compressed.compression_ratio == 0.0 {
+        if !compressed.is_compressed {
             return Ok(compressed.compressed_bytes.clone());
         }
 
@@ -219,6 +223,7 @@ impl CompressionEngine {
             original_size,
             compressed_size,
             compression_ratio,
+            is_compressed: true,
             algorithm: CompressionAlgorithm::Zstd,
             level: level as u8,
         })
@@ -249,6 +254,7 @@ impl CompressionEngine {
             original_size,
             compressed_size,
             compression_ratio,
+            is_compressed: true,
             algorithm: CompressionAlgorithm::Lz4,
             level: self.config.level.to_lz4_level() as u8,
         })
@@ -269,6 +275,7 @@ impl CompressionEngine {
             original_size: data.len(),
             compressed_size: data.len(),
             compression_ratio: 0.0,
+            is_compressed: false,
             algorithm: CompressionAlgorithm::Zstd,
             level: 0,
         })
@@ -286,6 +293,7 @@ impl CompressionEngine {
             original_size: data.len(),
             compressed_size: data.len(),
             compression_ratio: 0.0,
+            is_compressed: false,
             algorithm: CompressionAlgorithm::Lz4,
             level: 0,
         })
