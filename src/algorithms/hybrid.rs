@@ -286,7 +286,10 @@ impl HybridCrypto {
         hybrid_keypair: &HybridKeyPair,
         message: &[u8],
     ) -> Result<CompressedHybridSignature> {
-        let signature = self.sign_hybrid(hybrid_keypair, message)?;
+        let mut signature = self.sign_hybrid(hybrid_keypair, message)?;
+        // Reflect that this specific signature is being delivered in compressed form.
+        // sign_hybrid() always sets compressed: false since it returns the raw struct.
+        signature.metadata.compressed = true;
         self.compress_signature(&signature)
     }
 

@@ -76,8 +76,10 @@ pub struct CompressionMetrics {
 impl Default for CompressionConfig {
     fn default() -> Self {
         Self {
-            algorithm: CompressionAlgorithm::Zstd,
-            level: CompressionLevel::Balanced,
+            // LZ4 fast: 100µs compress, 35µs decompress — 7x faster than Zstd balanced
+            // for online use. See BENCHMARKS.md for full comparison.
+            algorithm: CompressionAlgorithm::Lz4,
+            level: CompressionLevel::Fast,
             enabled: true,
             threshold_bytes: 1024,
         }
@@ -313,7 +315,7 @@ mod tests {
     fn test_compression_engine_creation() {
         let engine = CompressionEngine::new_default();
         assert!(engine.config.enabled);
-        assert_eq!(engine.config.algorithm, CompressionAlgorithm::Zstd);
+        assert_eq!(engine.config.algorithm, CompressionAlgorithm::Lz4);
     }
 
     #[test]

@@ -100,7 +100,10 @@ impl QuroxCrypto {
         }
     }
 
-    pub fn decapsulate(private_key: &PrivateKey, ciphertext: &[u8]) -> Result<Vec<u8>> {
+    pub fn decapsulate(
+        private_key: &PrivateKey,
+        ciphertext: &[u8],
+    ) -> Result<zeroize::Zeroizing<Vec<u8>>> {
         match private_key.algorithm {
             Algorithm::MlKem768 => MlKemCrypto::decapsulate(private_key, ciphertext),
             _ => Err(CryptoError::Generic(
@@ -252,7 +255,7 @@ mod tests {
         let decrypted_secret =
             QuroxCrypto::decapsulate(&keypair.private_key, &encryption_result.ciphertext).unwrap();
 
-        assert_eq!(encryption_result.shared_secret, decrypted_secret);
+        assert_eq!(encryption_result.shared_secret.as_slice(), decrypted_secret.as_slice());
     }
 
     #[test]

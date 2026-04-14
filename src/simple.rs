@@ -21,6 +21,7 @@ use crate::algorithms::{HybridCrypto, MlDsa44, MlKem768};
 use crate::bridge::{CryptographyBridge, KeyEncapsulationBridge};
 use crate::errors::{CryptoError, Result};
 use crate::types::{ClassicalAlgorithm, HybridKeyPair, HybridPolicy, PostQuantumAlgorithm, SecurityLevel, TransitionMode};
+use zeroize::Zeroizing;
 
 /// Quantum-safe signer using ML-DSA-44
 pub struct QuantumSigner {
@@ -179,7 +180,7 @@ impl QuantumEncryptor {
         Ok((ciphertext.into_bytes().to_vec(), shared_secret))
     }
 
-    pub fn decapsulate(&self, ciphertext_bytes: &[u8]) -> Result<Vec<u8>> {
+    pub fn decapsulate(&self, ciphertext_bytes: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
         use fips203::ml_kem_768::{CipherText, CT_LEN};
         use fips203::traits::SerDes;
 
@@ -190,7 +191,7 @@ impl QuantumEncryptor {
             .map_err(|_| CryptoError::Generic("Invalid ciphertext".to_string()))?;
 
         let shared_secret = self.bridge.decapsulate(&self.secret_key, &ciphertext)?;
-        Ok(shared_secret)
+        Ok(Zeroizing::new(shared_secret))
     }
 
     pub fn public_key_bytes(&self) -> Vec<u8> {
@@ -288,7 +289,7 @@ mod tests {
         let (ciphertext, shared_secret1) = encryptor.encapsulate().unwrap();
         let shared_secret2 = encryptor.decapsulate(&ciphertext).unwrap();
 
-        assert_eq!(shared_secret1, shared_secret2);
+        assert_eq!(shared_secret1.as_slice(), shared_secret2.as_slice());
         assert!(!ciphertext.is_empty());
         assert!(!shared_secret1.is_empty());
     }
@@ -323,6 +324,6 @@ mod tests {
         // Quantum encryption
         let (ct, ss1) = encryptor.encapsulate().unwrap();
         let ss2 = encryptor.decapsulate(&ct).unwrap();
-        assert_eq!(ss1, ss2);
+        assert_eq!(ss1.as_slice(), ss2.as_slice());
     }
 }

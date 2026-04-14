@@ -101,9 +101,9 @@ negligible relative to the signature verification it precedes.
 **Zstd maximum** adds ~105ms of compression overhead with marginal size
 reduction over balanced. Do not use it in production.
 
-The library defaults to `Zstd Balanced`. Based on these numbers, **LZ4 fast
-is the better default for most use cases** unless you're storing signatures
-long-term and care about byte count over latency.
+The library defaults to **LZ4 fast**. It is 7x faster than Zstd balanced
+with near-identical decompression. Use Zstd balanced only when storing
+signatures long-term and byte count matters more than latency.
 
 ---
 

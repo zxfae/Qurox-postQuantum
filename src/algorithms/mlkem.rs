@@ -18,7 +18,7 @@ use crate::bridge::KeyEncapsulationBridge;
 use crate::errors::{CryptoError, Result};
 use crate::types::{Algorithm, KeyPair, PrivateKey, PublicKey};
 
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use fips203::{
     ml_kem_768::{self, CT_LEN, DK_LEN, EK_LEN},
@@ -124,7 +124,7 @@ impl MlKemCrypto {
         })
     }
 
-    pub fn decapsulate(private_key: &PrivateKey, ciphertext: &[u8]) -> Result<Vec<u8>> {
+    pub fn decapsulate(private_key: &PrivateKey, ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
         if private_key.algorithm != Algorithm::MlKem768 {
             return Err(CryptoError::Generic(
                 "Invalid algorithm for ML-KEM decapsulation".to_string(),
@@ -138,7 +138,7 @@ impl MlKemCrypto {
             .try_into().map_err(|_| CryptoError::Generic("Invalid ciphertext size".to_string()))?;
         let ct = ml_kem_768::CipherText::try_from_bytes(ct_array)
             .map_err(|_| CryptoError::Generic("Invalid ciphertext".to_string()))?;
-        MlKem768.decapsulate(&dk, &ct)
+        Ok(Zeroizing::new(MlKem768.decapsulate(&dk, &ct)?))
     }
 }
 
@@ -163,7 +163,7 @@ mod tests {
         let decrypted_secret =
             MlKemCrypto::decapsulate(&keypair.private_key, &encryption_result.ciphertext).unwrap();
 
-        assert_eq!(encryption_result.shared_secret, decrypted_secret);
+        assert_eq!(encryption_result.shared_secret.as_slice(), decrypted_secret.as_slice());
         assert!(!encryption_result.ciphertext.is_empty());
         assert!(!encryption_result.shared_secret.is_empty());
     }
@@ -208,6 +208,6 @@ mod tests {
             MlKemCrypto::decapsulate(&keypair2.private_key, &encryption_result.ciphertext).unwrap();
 
         // Wrong key should produce different shared secret
-        assert_ne!(encryption_result.shared_secret, decrypted_secret);
+        assert_ne!(encryption_result.shared_secret.as_slice(), decrypted_secret.as_slice());
     }
 }
