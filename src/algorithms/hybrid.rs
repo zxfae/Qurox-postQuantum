@@ -22,8 +22,9 @@ use crate::algorithms::{EcdsaCrypto, EcdsaCurve, MlDsaCrypto, SchnorrCrypto, Slh
 use crate::compression::{CompressedHybridSignature, CompressionEngine, CompressionMetrics};
 use crate::errors::{CryptoError, Result};
 use crate::types::{
-    Algorithm, ClassicalAlgorithm, HybridKeyPair, HybridMetadata, HybridPolicy, HybridSignature,
-    KeyPair, PostQuantumAlgorithm, SecurityLevel, TransitionMode,
+    Algorithm, ClassicalAlgorithm, HybridKeyPair, HybridMetadata, HybridPolicy,
+    HybridPublicBundle, HybridSignature, KeyPair, PostQuantumAlgorithm, SecurityLevel,
+    TransitionMode,
 };
 
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -48,6 +49,10 @@ impl Default for HybridPolicy {
 impl HybridCrypto {
     pub fn new(policy: HybridPolicy) -> Self {
         Self { policy }
+    }
+
+    pub fn get_policy(&self) -> &HybridPolicy {
+        &self.policy
     }
 
     pub fn new_default() -> Self {
@@ -291,6 +296,68 @@ impl HybridCrypto {
         // sign_hybrid() always sets compressed: false since it returns the raw struct.
         signature.metadata.compressed = true;
         self.compress_signature(&signature)
+    }
+
+    /// Verify a hybrid signature using only public keys (no private material needed).
+    /// Use this when the verifier is a different party than the signer.
+    pub fn verify_hybrid_bundle(
+        &self,
+        bundle: &HybridPublicBundle,
+        message: &[u8],
+        signature: &HybridSignature,
+    ) -> Result<bool> {
+        let classical_valid = match bundle.classical_public_key.algorithm {
+            Algorithm::EcdsaK256 | Algorithm::EcdsaP256 => EcdsaCrypto::verify(
+                &bundle.classical_public_key,
+                message,
+                &signature.classical_signature,
+            )?,
+            Algorithm::Schnorr => SchnorrCrypto::verify(
+                &bundle.classical_public_key,
+                message,
+                &signature.classical_signature,
+            )?,
+            _ => {
+                return Err(CryptoError::Generic(
+                    "Invalid classical algorithm in bundle".to_string(),
+                ))
+            }
+        };
+
+        let post_quantum_valid = match bundle.post_quantum_public_key.algorithm {
+            Algorithm::MlDsa44 => MlDsaCrypto::verify(
+                &bundle.post_quantum_public_key,
+                message,
+                &signature.post_quantum_signature,
+            )?,
+            Algorithm::SlhDsaSha2128f => SlhDsaCrypto::verify(
+                &bundle.post_quantum_public_key,
+                message,
+                &signature.post_quantum_signature,
+            )?,
+            _ => {
+                return Err(CryptoError::Generic(
+                    "Invalid post-quantum algorithm in bundle".to_string(),
+                ))
+            }
+        };
+
+        match bundle.transition_mode {
+            TransitionMode::ClassicalOnly => Ok(classical_valid),
+            TransitionMode::QuantumOnly => Ok(post_quantum_valid),
+            TransitionMode::HybridOptional => Ok(classical_valid || post_quantum_valid),
+            TransitionMode::HybridRequired => Ok(classical_valid && post_quantum_valid),
+        }
+    }
+
+    pub fn verify_hybrid_bundle_compressed(
+        &self,
+        bundle: &HybridPublicBundle,
+        message: &[u8],
+        compressed_signature: &CompressedHybridSignature,
+    ) -> Result<bool> {
+        let signature = self.decompress_signature(compressed_signature)?;
+        self.verify_hybrid_bundle(bundle, message, &signature)
     }
 
     pub fn verify_hybrid_compressed(

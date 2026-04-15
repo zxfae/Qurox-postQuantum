@@ -30,7 +30,7 @@ pub use errors::*;
 pub use types::*;
 
 pub use simple::qurox;
-pub use simple::{HybridSigner, QuantumEncryptor, QuantumSigner};
+pub use simple::{HybridSigner, HybridVerifier, QuantumEncryptor, QuantumSigner, QuantumVerifier};
 pub use algorithms::ecdsa::EcdsaCurve;
 
 use algorithms::*;

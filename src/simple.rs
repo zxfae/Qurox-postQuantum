@@ -20,7 +20,10 @@
 use crate::algorithms::{HybridCrypto, MlDsa44, MlKem768};
 use crate::bridge::{CryptographyBridge, KeyEncapsulationBridge};
 use crate::errors::{CryptoError, Result};
-use crate::types::{ClassicalAlgorithm, HybridKeyPair, HybridPolicy, PostQuantumAlgorithm, SecurityLevel, TransitionMode};
+use crate::types::{
+    Algorithm, ClassicalAlgorithm, HybridKeyPair, HybridPolicy, HybridPublicBundle,
+    PostQuantumAlgorithm, PublicKey, SecurityLevel, TransitionMode,
+};
 use zeroize::Zeroizing;
 
 /// Quantum-safe signer using ML-DSA-44
@@ -151,6 +154,26 @@ impl HybridSigner {
             &self.hybrid_keypair.post_quantum_keypair.public_key.bytes,
         )
     }
+
+    /// Export a public-key-only bundle for cross-party verification.
+    /// Share this with a verifier — it contains no private material.
+    pub fn public_key_bundle(&self) -> HybridPublicBundle {
+        HybridPublicBundle {
+            classical_public_key: self.hybrid_keypair.classical_keypair.public_key.clone(),
+            post_quantum_public_key: self
+                .hybrid_keypair
+                .post_quantum_keypair
+                .public_key
+                .clone(),
+            security_level: self.hybrid_keypair.security_level,
+            transition_mode: self.hybrid_crypto.get_policy().transition_mode,
+        }
+    }
+
+    /// Build a verifier from this signer's public keys.
+    pub fn verifier(&self) -> HybridVerifier {
+        HybridVerifier::from_bundle(self.public_key_bundle())
+    }
 }
 
 /// Key encapsulation via ML-KEM-768 (FIPS 203).
@@ -196,6 +219,94 @@ impl QuantumEncryptor {
 
     pub fn public_key_bytes(&self) -> Vec<u8> {
         self.bridge.kem_public_key_to_bytes(&self.public_key)
+    }
+}
+
+/// Verifier for ML-DSA-44 signatures. Holds only the public key — no private material.
+/// Construct from `QuantumSigner::public_key_bytes()` to verify signatures from a remote party.
+pub struct QuantumVerifier {
+    public_key: PublicKey,
+}
+
+impl QuantumVerifier {
+    /// Build a verifier from raw public key bytes produced by `QuantumSigner::public_key_bytes()`.
+    pub fn from_bytes(public_key_bytes: &[u8]) -> Result<Self> {
+        Ok(Self {
+            public_key: PublicKey {
+                bytes: public_key_bytes.to_vec(),
+                algorithm: Algorithm::MlDsa44,
+            },
+        })
+    }
+
+    /// Verify a signature produced by `QuantumSigner::sign()`.
+    pub fn verify(&self, message: &[u8], signature: &[u8]) -> Result<bool> {
+        use crate::algorithms::MlDsaCrypto;
+        use crate::types::Signature;
+        let sig = Signature { bytes: signature.to_vec(), algorithm: Algorithm::MlDsa44 };
+        MlDsaCrypto::verify(&self.public_key, message, &sig)
+    }
+}
+
+/// Verifier for hybrid (classical + post-quantum) signatures.
+/// Holds only public keys — no private material.
+/// Construct from `HybridSigner::public_key_bundle()`.
+pub struct HybridVerifier {
+    bundle: HybridPublicBundle,
+    hybrid_crypto: HybridCrypto,
+}
+
+impl HybridVerifier {
+    /// Build a verifier from a public key bundle produced by `HybridSigner::public_key_bundle()`.
+    pub fn from_bundle(bundle: HybridPublicBundle) -> Self {
+        let classical_algorithm = match bundle.classical_public_key.algorithm {
+            Algorithm::EcdsaK256 => ClassicalAlgorithm::EcdsaK256,
+            Algorithm::EcdsaP256 => ClassicalAlgorithm::EcdsaP256,
+            Algorithm::Schnorr => ClassicalAlgorithm::Schnorr,
+            _ => ClassicalAlgorithm::EcdsaK256,
+        };
+        let post_quantum_algorithm = match bundle.post_quantum_public_key.algorithm {
+            Algorithm::MlDsa44 => PostQuantumAlgorithm::MlDsa44,
+            Algorithm::SlhDsaSha2128f => PostQuantumAlgorithm::SlhDsaSha2128f,
+            _ => PostQuantumAlgorithm::MlDsa44,
+        };
+        let policy = HybridPolicy {
+            security_level: bundle.security_level,
+            transition_mode: bundle.transition_mode,
+            classical_algorithm,
+            post_quantum_algorithm,
+            compression_enabled: false,
+            compression_config: None,
+        };
+        Self {
+            bundle,
+            hybrid_crypto: HybridCrypto::new(policy),
+        }
+    }
+
+    /// Verify a hybrid signature produced by `HybridSigner::sign()`.
+    pub fn verify(&self, message: &[u8], signature: &[u8]) -> crate::errors::Result<bool> {
+        let sig = serde_json::from_slice(signature).map_err(|_| {
+            crate::errors::CryptoError::SerializationError(
+                "Failed to deserialize signature".to_string(),
+            )
+        })?;
+        self.hybrid_crypto.verify_hybrid_bundle(&self.bundle, message, &sig)
+    }
+
+    /// Verify a compact (compressed) hybrid signature produced by `HybridSigner::sign_compact()`.
+    pub fn verify_compact(
+        &self,
+        message: &[u8],
+        compressed_signature: &[u8],
+    ) -> crate::errors::Result<bool> {
+        let compressed_sig = serde_json::from_slice(compressed_signature).map_err(|_| {
+            crate::errors::CryptoError::SerializationError(
+                "Failed to deserialize compressed signature".to_string(),
+            )
+        })?;
+        self.hybrid_crypto
+            .verify_hybrid_bundle_compressed(&self.bundle, message, &compressed_sig)
     }
 }
 
@@ -292,6 +403,60 @@ mod tests {
         assert_eq!(shared_secret1.as_slice(), shared_secret2.as_slice());
         assert!(!ciphertext.is_empty());
         assert!(!shared_secret1.is_empty());
+    }
+
+    #[test]
+    fn test_quantum_verifier_cross_party() {
+        let alice = QuantumSigner::new().unwrap();
+        let message = b"signed by alice";
+
+        let sig = alice.sign(message).unwrap();
+
+        // Bob builds a verifier from Alice's public key — no private key involved
+        let bob = QuantumVerifier::from_bytes(&alice.public_key_bytes()).unwrap();
+        assert!(bob.verify(message, &sig).unwrap());
+
+        // Wrong message must fail
+        assert!(!bob.verify(b"not alice's message", &sig).unwrap());
+    }
+
+    #[test]
+    fn test_hybrid_verifier_cross_party() {
+        let alice = HybridSigner::new().unwrap();
+        let message = b"hybrid signed by alice";
+
+        let sig = alice.sign(message).unwrap();
+
+        // Bob gets Alice's public bundle and verifies without knowing her private keys
+        let bob = alice.verifier();
+        assert!(bob.verify(message, &sig).unwrap());
+
+        // Wrong message must fail
+        assert!(!bob.verify(b"tampered", &sig).unwrap());
+    }
+
+    #[test]
+    fn test_hybrid_verifier_compact_cross_party() {
+        let alice = HybridSigner::new().unwrap();
+        let message = b"compact hybrid signed by alice";
+
+        let compact_sig = alice.sign_compact(message).unwrap();
+
+        let bob = alice.verifier();
+        assert!(bob.verify_compact(message, &compact_sig).unwrap());
+    }
+
+    #[test]
+    fn test_hybrid_verifier_rejects_wrong_signer() {
+        let alice = HybridSigner::new().unwrap();
+        let eve = HybridSigner::new().unwrap();
+        let message = b"signed by alice";
+
+        let sig = alice.sign(message).unwrap();
+
+        // Eve's verifier uses Eve's public keys — must reject Alice's signature
+        let eve_verifier = eve.verifier();
+        assert!(!eve_verifier.verify(message, &sig).unwrap());
     }
 
     #[test]

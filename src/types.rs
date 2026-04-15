@@ -114,6 +114,16 @@ pub struct HybridKeyPair {
     pub security_level: SecurityLevel,
 }
 
+/// Public keys only — safe to share, no private material.
+/// Used by HybridVerifier to verify signatures without access to private keys.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HybridPublicBundle {
+    pub classical_public_key: PublicKey,
+    pub post_quantum_public_key: PublicKey,
+    pub security_level: SecurityLevel,
+    pub transition_mode: TransitionMode,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HybridSignature {
     pub classical_signature: Signature,

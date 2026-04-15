@@ -2,15 +2,15 @@
 
 [package]
 name = "qurox-pq"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Philippe Lecrosnier <lecro.philippe@icloud.com>"]
 description = "Quantum-ready cryptographic SDK with hybrid classical and post-quantum algorithms"
 license = "Apache-2.0"
 readme = "README.md"
-homepage = "https://github.com/zxfae/Qurox-pq"
+homepage = "https://github.com/zxfae/Qurox-postQuantum"
 rust-version = "1.70"
-repository = "https://github.com/zxfae/Qurox-pq"
+repository = "https://github.com/zxfae/Qurox-postQuantum"
 documentation = "https://docs.rs/qurox-pq"
 keywords = ["cryptography", "post-quantum", "ecdsa", "schnorr", "hybrid"]
 categories = ["cryptography"]
